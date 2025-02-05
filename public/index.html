@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shuvee :3</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            background-color: #0e1621;
+            color: #fff;
+        }
+
+        #sidebar {
+            width: 300px;
+            background-color: #17212b;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #sidebar header {
+            padding: 20px;
+            background-color: #1f2c38;
+            text-align: center;
+            font-size: 1.2em;
+        }
+
+        #chats {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .chat-item {
+            padding: 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #1f2c38;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .chat-item:hover {
+            background-color: #1f2c38;
+        }
+
+        .action-button {
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #deleteSession {
+            background-color: #ff4444;
+        }
+
+        #exportActiveChat {
+            background-color: #6ab3f3;
+        }
+
+        #chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #0e1621;
+        }
+
+        #messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 15px;
+            background-color: #17212b;
+            border-radius: 8px;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .sender {
+            color: #6ab3f3;
+            font-weight: bold;
+        }
+
+        .date {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+
+        #inputArea {
+            padding: 15px;
+            background-color: #17212b;
+            display: flex;
+            gap: 10px;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #1f2c38;
+            border-radius: 5px;
+            background-color: #1f2c38;
+            color: #fff;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #6ab3f3;
+            color: white;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #4a90e2;
+        }
+
+        .file-button {
+            background-color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <header id="accountName">Shuvee TG HACK Web</header>
+        <div id="chats"></div>
+        <div id="deleteSession" class="action-button" onclick="deleteSession()">Видалити сесію</div>
+        <div id="exportActiveChat" class="action-button" onclick="exportActiveChat()">Експортувати чат</div>
+    </div>
+
+    <div id="chat">
+        <div id="messages"></div>
+        <div id="inputArea">
+            <input type="text" id="messageInput" placeholder="Написати повідомлення...">
+            <button onclick="document.getElementById('fileInput').click()" class="file-button">📁</button>
+            <input type="file" id="fileInput" hidden>
+            <button onclick="sendMessage()">Надіслати</button>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket('ws://localhost:8080');
+        let currentChatId = null;
+        let currentSessionName = '';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUserInfo();
+            loadChats();
+        });
+
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'message' && data.chatId === currentChatId) {
+                addMessageToUI(data.message);
+            }
+        };
+
+        async function loadUserInfo() {
+            try {
+                const response = await fetch('/current-user');
+                const user = await response.json();
+                document.getElementById('accountName').textContent = user.username;
+                currentSessionName = user.sessionName;
+            } catch (error) {
+                console.error('Помилка завантаження користувача:', error);
+            }
+        }
+
+        async function loadChats() {
+            try {
+                const response = await fetch('/chats');
+                const chats = await response.json();
+                renderChats(chats);
+            } catch (error) {
+                console.error('Помилка завантаження чатів:', error);
+            }
+        }
+
+        function renderChats(chats) {
+            const container = document.getElementById('chats');
+            container.innerHTML = chats.map(chat => `
+                <div class="chat-item" data-chat-id="${chat.id}" onclick="openChat(${chat.id})">
+                    <div>
+                        <div class="chat-title">${chat.title}</div>
+                        <div class="chat-preview">${chat.lastMessage || 'Немає повідомлень'}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function openChat(chatId) {
+            currentChatId = chatId;
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.chatId === String(chatId));
+            });
+            await loadMessages();
+        }
+
+        async function loadMessages() {
+            try {
+                const response = await fetch(`/messages/${currentChatId}`);
+                const { messages } = await response.json();
+                renderMessages(messages);
+            } catch (error) {
+                console.error('Помилка завантаження повідомлень:', error);
+            }
+        }
+
+        function renderMessages(messages) {
+            const container = document.getElementById('messages');
+            container.innerHTML = messages.map(msg => `
+                <div class="message">
+                    <div class="message-header">
+                        <span class="sender">${msg.senderName}</span>
+                        <span class="date">${msg.date}</span>
+                    </div>
+                    <div class="message-text">${msg.text}</div>
+                    ${msg.file ? `<a href="${msg.file}" download class="file-link">📎 ${msg.file.split('/').pop()}</a>` : ''}
+                </div>
+            `).join('');
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            
+            if (text && currentChatId) {
+                try {
+                    await fetch('/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chatId: currentChatId, text })
+                    });
+                    input.value = '';
+                } catch (error) {
+                    console.error('Помилка відправки:', error);
+                }
+            }
+        }
+
+        async function deleteSession() {
+            if (confirm('Ви впевнені, що хочете видалити поточну сесію?')) {
+                try {
+                    await fetch('/delete-session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionName: currentSessionName })
+                    });
+                    window.location.reload();
+                } catch (error) {
+                    console.error('Помилка видалення сесії:', error);
+                }
+            }
+        }
+        async function exportActiveChat() {
+            if (!currentChatId) return alert('Оберіть чат для експорту!');
+            
+            try {
+                const response = await fetch(`/export-active-chat/${currentChatId}`);
+                const blob = await response.blob();
+                
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chat_${currentChatId}_${Date.now()}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Помилка експорту:', error);
+                alert('Не вдалося експортувати чат');
+            }
+        }
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file && currentChatId) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    await fetch(`/upload/${currentChatId}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    loadMessages();
+                } catch (error) {
+                    console.error('Помилка завантаження файлу:', error);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
